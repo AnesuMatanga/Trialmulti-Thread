@@ -88,6 +88,7 @@ void update() {
 		// Combine local accelerations
 		#pragma omp critical
 		{
+			//acc[i] += local_acc[i];
 			for (int j = 0; j < N; ++j){
 				acc[j] += local_acc[j];
 			}
@@ -175,7 +176,7 @@ void initialise() {
 
 		// Set the number of threads to the maximum available according to hardware
 		//omp_set_num_threads(omp_get_max_threads());
-		//omp_set_num_threads(omp_get_max_threads());
+		omp_set_num_threads(6);
 
 		// Initialise NBody Simulation
 		initialise();
