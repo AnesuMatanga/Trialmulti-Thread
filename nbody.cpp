@@ -38,66 +38,101 @@ const int height = 1080;
 
 // Bodies
 body bodies[N];
+//body *bodies = new body[N];
 
 // Update Nbody Simulation
 void update() {
 	// Acceleration
-	vec2 acc[N];
+	vec2 acc[N] = {};
+
+	// Initiallise threads number
+	int num_threads = omp_get_max_threads();
+
+	// Thread local, local storage for local acc
+	vec2 local_acc[num_threads][N];
+
+	// Initialise local_acc arrays to zero
+	#pragma omp parallel
+	{
+		int ID = omp_get_thread_num();
+		for(int i = 0; i < N; ++i){
+			// Initiallise
+			local_acc[ID][i] = vec2(0, 0);
+		}
+	}
 
 	// Clear Acceleration
 	// Using pragma for to parallelise for
-	//#pragma omp parallel for
+	/*#pragma omp parallel for
 	for(int i = 0; i < N; ++i) {
 		acc[i] = vec2(0,0);
-	}
+	}*/
 
 	// For each body
 	// Schedule(dynamic) To avoid race conditions, load imbalance, will locallise acc and for loops
-	#pragma omp parallel for schedule(dynamic)
-	for(int i = 0; i < N; ++i) {
-		vec2 local_acc[N] = {};
-		/*for (int j = 0; j < N; ++j){
-			local_acc[j] = vec2(0, 0);
-		}*/
+	#pragma omp parallel
+	{
+		int ID = omp_get_thread_num();
 
-		// For each following body
-		for(int j = i+1; j < N; ++j) {
-			// Difference in position
-			vec2 dx = bodies[i].pos - bodies[j].pos;
+		#pragma omp for schedule(dynamic)
+		for(int i = 0; i < N; ++i) {
+			//vec2 local_acc[N] = {};
+			/*for (int j = 0; j < N; ++j){
+				local_acc[j] = vec2(0, 0);
+			}*/
 
-			// Normalised difference in position
-			vec2 u = normalise(dx);
+			// For each following body
+			for(int j = i+1; j < N; ++j) {
+				// No point computing if i and j are the same
+				if(i != j){
+					// Difference in position
+					vec2 dx = bodies[i].pos - bodies[j].pos;
 
-			// Calculate distance squared
-			double d2 = length2(dx);
+					// Normalised difference in position
+					vec2 u = normalise(dx);
 
-			// If greater than minimum distance
-			if(d2 > min2) {
-				// Smoothing factor for particles close to minimum distance
-				double x = smoothstep(min2, 2 * min2, d2);
+					// Calculate distance squared
+					double d2 = length2(dx);
 
-				// Force between bodies
-				double f = -G*bodies[i].mass*bodies[j].mass / d2;
+					// If greater than minimum distance
+					if(d2 > min2) {
+						// Smoothing factor for particles close to minimum distance
+						double x = smoothstep(min2, 2 * min2, d2);
 
-				// Add to acceleration
-				local_acc[i] += (u * f / bodies[i].mass) * x;
-				local_acc[j] -= (u * f / bodies[j].mass) * x;
-			}
-		}
+						// Force between bodies
+						double f = -G*bodies[i].mass*bodies[j].mass / d2;
 
-		// Combine local accelerations
-		#pragma omp critical
-		{
-			//acc[i] += local_acc[i];
-			for (int j = 0; j < N; ++j){
-				acc[j] += local_acc[j];
+						// Add to acceleration
+						//local_acc[ID][i] += (u * f / bodies[i].mass) * x;
+						//local_acc[ID][j] -= (u * f / bodies[j].mass) * x;
+						// Add to local acceleration
+                    	vec2 ai = (u * f / bodies[i].mass) * x;
+                    	vec2 aj = (u * f / bodies[j].mass) * x;
+
+                    	
+                    	local_acc[ID][i] += ai;
+                    	
+                    	local_acc[ID][j] -= aj;
+
+					}
+				}
 			}
 		}
 	}
 
+	// Combine local accelerations
+	#pragma omp parallel for
+	//acc[i] += local_acc[i];
+	for (int j = 0; j < N; ++j){
+		for (int t = 0; t < num_threads; ++t){
+			acc[j] += local_acc[t][j];
+		}
+	}
+		
+
 	// For each body
 	// Create threads to execute the following block of code & split loop iterations between threads
-	//#pragma omp parallel for
+	#pragma omp parallel for 
 		for(int i = 0; i < N; ++i) {
 			// Update Position
 			bodies[i].pos += bodies[i].vel * dt;
@@ -175,8 +210,8 @@ void initialise() {
 	int main() {
 
 		// Set the number of threads to the maximum available according to hardware
-		//omp_set_num_threads(omp_get_max_threads());
-		omp_set_num_threads(6);
+		omp_set_num_threads(omp_get_max_threads());
+		// omp_set_num_threads(6);
 
 		// Initialise NBody Simulation
 		initialise();
